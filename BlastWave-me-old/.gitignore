@@ -1,0 +1,18 @@
+# build artifacts
+build/
+*.o
+*.so
+*.a
+
+# simulation output (do not track)
+output/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# editor junk
+.vscode/
+.idea/
+*.swp
+*~

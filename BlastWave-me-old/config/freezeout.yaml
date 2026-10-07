@@ -1,0 +1,6 @@
+# Freeze-out parameters (Phase 1: only T is fitted)
+temperature_MeV: 150.0
+beta_s: 0.5
+eta_max: 1.7
+n_profile: 2
+R_fm: 5.0

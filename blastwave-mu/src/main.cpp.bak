@@ -1,0 +1,404 @@
+#include <cmath>
+#include <gsl/gsl_errno.h>
+#include <cstdlib>
+#include <fstream>
+#include <iomanip>
+#include <iostream>
+#include <sstream>
+#include <string>
+
+#include "blastwave/params.hpp"
+#include "blastwave/feeddown.hpp"
+#include "fit/chi2.hpp"
+#include "fit/joint.hpp"
+#include "fit/minuit_fit.hpp"
+#include "fit/chi2_surface.hpp"
+#include "fit/ptbin_scan.hpp"
+#include "fit/mcmc.hpp"
+#include "analysis/dndy.hpp"
+#include "io/phenix_reader.hpp"
+#include "particles/table.hpp"
+
+using namespace bwmu;
+
+static std::string cent_dir(const std::string& base, int c) {
+    std::ostringstream s;
+    s << base << "/cent" << std::setw(2) << std::setfill('0') << c;
+    return s.str();
+}
+
+static int run_one_centrality(const std::string& file,
+                              int centrality,
+                              const std::string& out_base)
+{
+    std::cout << "\n=================================================\n";
+    std::cout << " Fitting centrality " << centrality << "\n";
+    std::cout << "=================================================\n";
+
+    // Read the real data
+    std::vector<Spectrum> data;
+    try {
+        data = read_phenix(file, centrality, 12);
+    } catch (const std::exception& e) {
+        std::cerr << "  read error: " << e.what() << "\n";
+        return 1;
+    }
+
+    // Keep only species that have data
+    std::vector<Species> species_list;
+    std::vector<Spectrum> data_used;
+    for (const auto& s : data) {
+        if (s.points.size() < 3) continue;   // need at least 3 points
+        species_list.push_back(get_species(s.species));
+        data_used.push_back(s);
+    }
+
+    if (species_list.size() < 4) {
+        std::cerr << "  not enough species with data: "
+                  << species_list.size() << "\n";
+        return 1;
+    }
+
+    std::cout << "  species used: ";
+    for (const auto& s : species_list) std::cout << s.name << "  ";
+    std::cout << "\n";
+    std::cout << "  data points per species: ";
+    for (const auto& s : data_used) std::cout << s.points.size() << "  ";
+    std::cout << "\n";
+
+    // Fit
+    BWParams bw;
+    bw.R_fm   = 12.0;   // Au+Au 0-5%
+    bw.n_prof = 2;
+
+    FitBounds bounds;
+    bounds.T_min   = 0.070;  bounds.T_max   = 0.250;
+    bounds.bs_min = 0.05;  bounds.bs_max  = 0.90;
+    bounds.muB_min = -0.050; bounds.muB_max = 0.100;
+    bounds.muQ_min = -0.030; bounds.muQ_max = 0.030;
+    bounds.muS_min = -0.030; bounds.muS_max = 0.030;
+
+    auto res = joint_fit_minuit(species_list, data_used, bw, bounds,
+                                Statistics::Quantum, 1e7, true);
+
+    std::cout << "\n  --- result ---\n";
+    std::cout << "  T       = " << res.params.T * 1000 << " MeV\n";
+    std::cout << "  beta_s  = " << res.params.beta_s << "\n";
+    std::cout << "  <beta>  = "
+              << 2.0 / (bw.n_prof + 2.0) * res.params.beta_s << "\n";
+    std::cout << "  mu_B    = " << res.params.mu_B * 1000 << " MeV\n";
+    std::cout << "  mu_Q    = " << res.params.mu_Q * 1000 << " MeV\n";
+    std::cout << "  mu_S    = " << res.params.mu_S * 1000 << " MeV\n";
+    std::cout << "  chi2    = " << res.chi2 << "\n";
+    std::cout << "  chi2/ndof = " << res.chi2_ndof << "\n";
+
+    // Write result file
+    const std::string d = cent_dir(out_base, centrality);
+    std::string cmd = "mkdir -p '" + d + "'";
+    if (std::system(cmd.c_str()) != 0) {
+        std::cerr << "  mkdir failed\n";
+        return 1;
+    }
+    write_joint_fit_result(res, species_list, d + "/result.txt");
+
+    // Write best-fit curves
+    for (size_t i = 0; i < species_list.size(); ++i) {
+        const auto& sp = species_list[i];
+        // find its norm group
+        int grp = -1;
+        {
+            std::vector<double> seen;
+            for (size_t k = 0; k < species_list.size(); ++k) {
+                int found = -1;
+                for (size_t m = 0; m < seen.size(); ++m)
+                    if (std::abs(seen[m] - species_list[k].mass) < 1e-6) found = m;
+                if (found < 0) { found = (int)seen.size(); seen.push_back(species_list[k].mass); }
+                if (k == i) { grp = found; break; }
+            }
+        }
+        const double A = res.norms[grp];
+
+        std::ofstream out(d + "/fit_" + sp.name + ".dat");
+        out << "# mT-m0[GeV]  data  err  model\n";
+        for (const auto& p : data_used[i].points) {
+            const double model = A * model_shape(p.mT, sp, bw, res.params,
+                                                 Statistics::Quantum);
+            out << p.mT << "  " << p.value << "  " << p.err
+                << "  " << model << "\n";
+        }
+    }
+
+    // Phase 10 surface scan disabled for MINUIT phase
+    if (false) {
+        const std::string sf = d + "/chi2_surface.dat";
+        bwmu::scan_chi2_surface(species_list, data_used, bw, res.params,
+                               0.080, 0.250, 35,
+                               0.30,  0.85,  55,
+                               bwmu::Statistics::Quantum,
+                               sf);
+    }
+
+    // Append to summary
+    std::ofstream sum(out_base + "/summary.dat", std::ios::app);
+    sum << std::fixed << std::setprecision(5)
+        << centrality << "  "
+        << res.params.T << "  "
+        << res.params.beta_s << "  "
+        << res.params.mu_B << "  "
+        << res.params.mu_Q << "  "
+        << res.params.mu_S << "  "
+        << res.chi2_ndof << "\n";
+
+    return 0;
+}
+
+static int run_pt_scan(const std::string& file, const std::string& out_base)
+{
+    std::cout << "\n=== pT-window scan ===\n";
+
+    // Read centrality-0 data
+    std::vector<Spectrum> data = read_phenix(file, 0, 12);
+
+    std::vector<Species> species_list;
+    std::vector<Spectrum> data_used;
+    for (const auto& s : data) {
+        if (s.points.size() < 3) continue;
+        species_list.push_back(get_species(s.species));
+        data_used.push_back(s);
+    }
+
+    BWParams bw; bw.R_fm = 12.0; bw.n_prof = 2;
+
+    FitBounds bounds;
+    bounds.T_min   = 0.080;  bounds.T_max   = 0.250;
+    bounds.bs_min = 0.05;  bounds.bs_max  = 0.90;
+    bounds.muB_min = -0.050; bounds.muB_max = 0.100;
+    bounds.muQ_min = -0.030; bounds.muQ_max = 0.030;
+    bounds.muS_min = -0.030; bounds.muS_max = 0.030;
+
+    // 5 overlapping pT windows
+    std::vector<std::pair<double,double>> windows = {
+        {0.20, 0.80},
+        {0.30, 1.00},
+        {0.40, 1.20},
+        {0.50, 1.50},
+        {0.60, 2.00}
+    };
+
+    auto results = scan_pT_windows(species_list, data_used, bw, bounds,
+                                   windows, Statistics::Quantum, true);
+
+    const std::string out = out_base + "/params_vs_ptbin.dat";
+    write_ptbin_scan(results, out);
+
+    std::cout << "\n[ptbin] summary:\n";
+    for (const auto& r : results) {
+        std::cout << "  pT[" << r.pT_min << "," << r.pT_max << "]  "
+                  << "T=" << r.params.T * 1000 << " MeV  "
+                  << "beta_s=" << r.params.beta_s << "  "
+                  << "chi2/ndof=" << r.chi2_ndof << "\n";
+    }
+    return 0;
+}
+
+static int run_mcmc_cmd(const std::string& file,
+                         const std::string& out_base,
+                         int centrality)
+{
+    std::cout << "\n=== MCMC centrality " << centrality << " ===\n";
+
+    auto data = read_phenix(file, centrality, 12);
+    std::vector<Species> species_list;
+    std::vector<Spectrum> data_used;
+    for (const auto& s : data) {
+        if (s.points.size() < 3) continue;
+        species_list.push_back(get_species(s.species));
+        data_used.push_back(s);
+    }
+    if (species_list.size() < 4) {
+        std::cerr << "not enough species\n"; return 1;
+    }
+
+    BWParams bw; bw.R_fm = 12.0; bw.n_prof = 2;
+    FitBounds bounds;
+    bounds.T_min   = 0.080;  bounds.T_max   = 0.250;
+    bounds.bs_min  = 0.05;   bounds.bs_max  = 0.90;
+    bounds.muB_min = -0.050; bounds.muB_max = 0.100;
+    bounds.muQ_min = -0.030; bounds.muQ_max = 0.030;
+    bounds.muS_min = -0.030; bounds.muS_max = 0.030;
+
+    std::cout << "Running joint fit for starting point...\n";
+    auto start = joint_fit_minuit(species_list, data_used, bw, bounds,
+                                  Statistics::Quantum, 1e7, false);
+    std::cout << "[start] T=" << start.params.T * 1000 << " MeV  "
+              << "beta_s=" << start.params.beta_s << "\n";
+
+    // Boltzmann for speed (posterior width nearly identical)
+    auto chain = run_mcmc(species_list, data_used, bw, bounds, start,
+                          Statistics::Boltzmann,
+                          30000, 6000, 5,
+                          0.008, 0.020, 0.004, 0.002, 0.002,
+                          12345);
+
+    std::string d = out_base + "/cent";
+    { std::ostringstream ss; ss << std::setw(2) << std::setfill('0') << centrality; d += ss.str(); }
+    std::system(("mkdir -p '" + d + "'").c_str());
+
+    write_mcmc_chain(chain, d + "/mcmc_chain.dat");
+    summarize_mcmc (chain, d + "/posterior_stats.dat");
+
+    std::cout << "\n--- posterior summary ---\n";
+    std::ifstream fin(d + "/posterior_stats.dat");
+    std::string line;
+    while (std::getline(fin, line)) std::cout << line << "\n";
+    return 0;
+}
+
+static int run_dndy_cmd(const std::string& file,
+                         const std::string& out_base,
+                         int centrality)
+{
+    std::cout << "\n=== dN/dy rapidity distributions for centrality "
+              << centrality << " ===\n";
+
+    // Read data (just to get the species list)
+    auto data = read_phenix(file, centrality, 12);
+    std::vector<Species> species_list;
+    for (const auto& s : data) {
+        if (s.points.size() < 3) continue;
+        species_list.push_back(get_species(s.species));
+    }
+
+    // Read fit result
+    std::string d = out_base + "/cent";
+    { std::ostringstream ss; ss << std::setw(2) << std::setfill('0') << centrality; d += ss.str(); }
+    std::string resfile = d + "/result.txt";
+
+    FitParams fp;
+    {
+        std::ifstream fin(resfile);
+        std::string line;
+        while (std::getline(fin, line)) {
+            if (line.empty() || line[0] == '#') continue;
+            std::istringstream ss(line);
+            ss >> fp.T >> fp.beta_s >> fp.mu_B >> fp.mu_Q >> fp.mu_S;
+            break;
+        }
+    }
+    std::cout << "[dndy] T=" << fp.T * 1000 << " MeV, beta_s=" << fp.beta_s << "\n";
+
+    BWParams bw; bw.R_fm = 12.0; bw.n_prof = 2;
+
+    // eta_max: 1.7 for S+S at 200 A GeV, 2.2 for Au+Au
+    const double eta_max = 2.2;
+
+    // Norms: use the fit results (read from result.txt)
+    std::vector<double> norms;
+    {
+        std::ifstream fin(resfile);
+        std::string line;
+        double val;
+        while (std::getline(fin, line)) {
+            if (line.find("group") != std::string::npos &&
+                line.find("A =") != std::string::npos) {
+                auto pos = line.find("A =");
+                if (pos != std::string::npos) {
+                    std::istringstream ss(line.substr(pos + 3));
+                    if (ss >> val) norms.push_back(val);
+                }
+            }
+        }
+    }
+    // Match norms to species via mass grouping
+    std::vector<double> species_norms(species_list.size(), 1.0);
+    {
+        std::vector<double> seen_mass;
+        for (size_t i = 0; i < species_list.size(); ++i) {
+            int grp = -1;
+            for (size_t k = 0; k < seen_mass.size(); ++k) {
+                if (std::abs(seen_mass[k] - species_list[i].mass) < 1e-6) {
+                    grp = static_cast<int>(k); break;
+                }
+            }
+            if (grp < 0) {
+                grp = static_cast<int>(seen_mass.size());
+                seen_mass.push_back(species_list[i].mass);
+            }
+            if (grp < static_cast<int>(norms.size())) {
+                species_norms[i] = norms[grp];
+            }
+        }
+    }
+
+    // Build a params vector (same FitParams for all species)
+    std::vector<FitParams> params(species_list.size(), fp);
+
+    const std::string out = d + "/dndy.dat";
+    write_dndy(species_list, bw, params, species_norms, eta_max,
+               -3.5, 3.5, 71, out);
+
+    return 0;
+}
+
+int main(int argc, char** argv) {
+    // Silence GSL underflow warnings (they are normal for
+    // heavy resonances at chemical freeze-out).
+    gsl_set_error_handler_off();
+
+    // Load resonance table once and register it globally
+    {
+        auto res = bwmu::load_resonances("data/resonances/resonances_QS.csv");
+        bwmu::set_resonances(res);
+        std::cout << "[main] loaded " << res.size()
+                  << " resonances for feed-down\n";
+    }
+
+    if (argc < 3) {
+        std::cerr << "Usage: " << argv[0]
+                  << " <phenix_file> <output_dir> [centrality]\n";
+        std::cerr << "  centrality = 0..11 (omit for all)\n";
+        return 1;
+    }
+
+    const std::string file = argv[1];
+    const std::string out  = argv[2];
+
+    // Create output directory
+    std::system(("mkdir -p '" + out + "'").c_str());
+
+    // Only write the header if the file is new (or empty).
+    // Opening with std::ios::app prevents truncation on subsequent runs.
+    {
+        std::ifstream check(out + "/summary.dat");
+        const bool exists = check.good();
+        check.close();
+        if (!exists) {
+            std::ofstream sum(out + "/summary.dat", std::ios::app);
+            sum << "# centrality  T[GeV]  beta_s  mu_B[GeV]  mu_Q[GeV]  mu_S[GeV]  chi2/ndof\n";
+        }
+    }
+
+    if (argc >= 4) {
+        const std::string sub = argv[3];
+        if (sub == "scan") {
+            return run_pt_scan(file, out);
+        }
+        if (sub == "mcmc") {
+            int c = (argc >= 5) ? std::atoi(argv[4]) : 0;
+            return run_mcmc_cmd(file, out, c);
+        }
+        if (sub == "dndy") {
+            int c = (argc >= 5) ? std::atoi(argv[4]) : 0;
+            return run_dndy_cmd(file, out, c);
+        }
+        // single centrality
+        int c = std::atoi(argv[3]);
+        return run_one_centrality(file, c, out);
+    }
+
+    // all centralities 0..11
+    for (int c = 0; c < 12; ++c) {
+        run_one_centrality(file, c, out);
+    }
+    return 0;
+}
