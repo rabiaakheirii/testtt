@@ -1,0 +1,122 @@
+{
+    "Verbose": "1",
+    "N_MPD_PID_Particles": "8",
+    "make_MC": "1",
+    "make_Efficiency": "1",
+    "PID_mode": "2",
+    "DCA_mode": "0",
+    "TOF_mode": "0",
+    "use_pt_corrections": "0",
+    "pt_corrections_file": "pt_corrections.root",
+    "Events": {
+        "PrimaryVertexZ": "100",
+        "Centrality": [[0, 80]]
+    },
+    "Tracks": {
+        "NHits": "20",
+        "NSigmaDCAx": "3",
+        "NSigmaDCAy": "3",
+        "NSigmaDCAz": "3",
+        "LowPtCut": "0.05"
+    },
+    "PID": {
+        "TPCSigma": "2",
+        "TOFSigma": "2",
+        "TOFDphiSigma": "3",
+        "TOFDzSigma": "3"
+    },
+    "MpdPid": {
+        "Energy": "9.2",
+        "Coef": "1.0",
+        "Generator": "PHQMD",
+        "Tracking": "CFHM",
+        "IniString": "pikaprdetrhe3he4",
+        "Add_dedx_only": "1"
+    },
+    "evPID": {
+        "VetoTPC": "3",
+        "VetoToF": "3"
+    },
+    "Particles": {
+        "pim": {
+            "PDG": "-211",
+            "Mass": "0.1395",
+            "Charge": "1",
+            "Enum": "1",
+            "pt_bins": [60, 0.0, 6.0],
+            "rapidity_bins": [60, -3.0, 3.0]
+        },
+        "pip": {
+            "PDG": "211",
+            "Mass": "0.1395",
+            "Charge": "1",
+            "Enum": "1",
+            "pt_bins": [60, 0.0, 6.0],
+            "rapidity_bins": [60, -3.0, 3.0]
+        },
+        "km": {
+            "PDG": "-321",
+            "Mass": "0.493677",
+            "Charge": "1",
+            "Enum": "2",
+            "pt_bins": [60, 0.0, 6.0],
+            "rapidity_bins": [60, -3.0, 3.0]
+        },
+        "kp": {
+            "PDG": "321",
+            "Mass": "0.493677",
+            "Charge": "1",
+            "Enum": "2",
+            "pt_bins": [60, 0.0, 6.0],
+            "rapidity_bins": [60, -3.0, 3.0]
+        },
+        "p": {
+            "PDG": "2212",
+            "Mass": "0.938",
+            "Charge": "1",
+            "Enum": "3",
+            "pt_bins": [60, 0.0, 6.0],
+            "rapidity_bins": [60, -3.0, 3.0]
+        },
+        "ap": {
+            "PDG": "-2212",
+            "Mass": "0.938",
+            "Charge": "1",
+            "Enum": "3",
+            "pt_bins": [60, 0.0, 6.0],
+            "rapidity_bins": [60, -3.0, 3.0]
+        },
+        "d": {
+            "PDG": "1000010020",
+            "Mass": "1.876",
+            "Charge": "1",
+            "Enum": "4",
+            "pt_bins": [30, 0.0, 6.0],
+            "rapidity_bins": [60, -3.0, 3.0]
+        },
+        "t": {
+            "PDG": "1000010030",
+            "Mass": "2.814",
+            "Charge": "1",
+            "Enum": "5",
+            "pt_bins": [20, 0.0, 6.0],
+            "rapidity_bins": [60, -3.0, 3.0]
+        },
+        "He3": {
+            "PDG": "1000020030",
+            "Mass": "2.814",
+            "Charge": "2",
+            "Enum": "6",
+            "pt_bins": [20, 0.0, 6.0],
+            "rapidity_bins": [60, -3.0, 3.0]
+        },
+        "He4": {
+            "PDG": "1000020040",
+            "Mass": "3.752",
+            "Charge": "2",
+            "Enum": "7",
+            "pt_bins": [15, 0.0, 6.0],
+            "rapidity_bins": [60, -3.0, 3.0]
+        }
+    }
+}

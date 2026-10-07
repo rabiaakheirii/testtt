@@ -1,0 +1,6 @@
+venv/
+urqmd/urqmd_output/
+urqmd/*.root
+*.root
+*.pdf
+*.png

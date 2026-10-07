@@ -1,0 +1,6 @@
+venv/*
+output/dca
+output/results
+.vscode
+*.png
+*.pdf

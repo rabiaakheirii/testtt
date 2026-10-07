@@ -1,0 +1,52 @@
+{
+  "experiment": "PHENIX",
+  "system": "UU",
+  "sqrt_s_NN": 200,
+  "variable": "mt",
+  "spectra": {
+    "format": "phenix_txt",
+    "path": "input/PHENIX_spectra/UU"
+  },
+  "centrality": ["0-80%", "0-20%", "20-40%", "40-60%"],
+  "npart": [330, 159.0, 61.6, 17.8],
+  "fit_range": {
+    "pi": [0.4, 1.2],
+    "K": [0.12, 1],
+    "p": [0.2, 1.0]
+  },
+  "hand_params": {
+    "T": [0.109, 0.124, 0.146, 0.166],
+    "beta": [0.771, 0.735, 0.649, 0.522],
+    "C": [
+      [12, 30, 14, 5],
+      [12, 30, 14, 5],
+      [12, 30, 14, 5],
+      [12, 30, 14, 5],
+      [55, 900, 350, 100],
+      [55, 900, 350, 100]
+    ]
+  },
+  "t_beta_penalty": {
+    "enabled": true,
+    "a0": 0.129557,
+    "a1": 0.232774,
+    "a2": -0.339709,
+    "sigma": 0.01
+  },
+  "fit_limits": {
+    "T_min_scale": 0.8,
+    "T_max_scale": 1.2,
+    "beta_min_scale": 0.8,
+    "beta_max_scale": 1.2,
+    "C_max_scale": 100000,
+    "T_min": 0.08,
+    "T_max": 0.22,
+    "beta_min": 0.3,
+    "beta_max": 0.9
+  },
+  "draw": {
+    "y_min": [0.003, 0.003, 0.003, 0.003, 0.0003, 0.0003],
+    "y_max": [200000, 200000, 200000, 200000, 300000, 30000]
+  },
+  "output_dir": "output/UU"
+}
